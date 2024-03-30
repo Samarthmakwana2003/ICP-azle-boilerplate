@@ -8,7 +8,10 @@ class Proposal {
    description: string;
    proposer: string;
    createdAt: Date;
-   status: 'Pending' | 'Approved' | 'Rejected';
+   votes: { [voter: string]: boolean }; 
+   status: 'Pending' | 'Active' | 'Completed';
+   quorum: number; 
+   expiryDate: Date; 
 }
 
 const proposalsStorage = StableBTreeMap<string, Proposal>(0);
@@ -18,7 +21,15 @@ export default Server(() => {
    app.use(express.json());
 
    app.post("/proposals", (req, res) => {
-      const proposal: Proposal =  {id: uuidv4(), createdAt: getCurrentDate(), status: 'Pending', ...req.body};
+      const proposal: Proposal =  {
+         id: uuidv4(),
+         createdAt: getCurrentDate(),
+         votes: {},
+         status: 'Pending',
+         quorum: Math.floor(Math.random() * 10) + 1, 
+         expiryDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), 
+         ...req.body
+      };
       proposalsStorage.insert(proposal.id, proposal);
       res.json(proposal);
    });
@@ -60,6 +71,25 @@ export default Server(() => {
       }
    });
 
+   app.post("/proposals/:id/vote", (req, res) => {
+      const proposalId = req.params.id;
+      const { voter, vote } = req.body;
+
+      const proposalOpt = proposalsStorage.get(proposalId);
+      if ("None" in proposalOpt) {
+         res.status(404).send(`the proposal with id=${proposalId} not found`);
+      } else {
+         const proposal = proposalOpt.Some;
+         if (proposal.status !== 'Active') {
+            res.status(400).send(`voting is not allowed on proposal with id=${proposalId}. Proposal status is ${proposal.status}`);
+         } else {
+            proposal.votes[voter] = vote;
+            proposalsStorage.insert(proposalId, proposal);
+            res.json(proposal);
+         }
+      }
+   });
+
    return app.listen();
 });
 
@@ -67,4 +97,3 @@ function getCurrentDate() {
    const timestamp = new Number(ic.time());
    return new Date(timestamp.valueOf() / 1000_000);
 }
-
